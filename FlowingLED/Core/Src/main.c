@@ -20,6 +20,7 @@
 #include "main.h"
 #include "adc.h"
 #include "gpio.h"
+#include "tim.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -54,66 +55,101 @@ GPIO_TypeDef* LED_Ports[8] = {
   LED1_GPIO_Port, LED2_GPIO_Port, LED3_GPIO_Port, LED4_GPIO_Port,
   LED5_GPIO_Port, LED6_GPIO_Port, LED7_GPIO_Port, LED8_GPIO_Port
 };
-uint8_t current_led = 0;   /* 当前点亮的 LED 编号 0-7 */
-uint8_t direction = 0;     /* 流水方向: 0=正向, 1=反向 */
-uint8_t last_btn = 1;      /* 按键上一次状态(内部上拉, 未按=1) */
+volatile uint8_t led_brightness[8] = {0}; /* 软件 PWM 亮度 0-100 */
+uint8_t current_led = 0;                  /* 当前渐亮的 LED 编号 0-7 */
+uint8_t direction = 0;                    /* 流水方向: 0=正向, 1=反向 */
+uint8_t last_btn = 1;                     /* 按键上一次稳定状态 */
+uint32_t step_delay_ms = 50;              /* 当前 LED 的保持时间 */
+uint32_t last_anim_tick = 0;
+uint32_t last_adc_tick = 0;
+uint32_t led_hold_start = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
-void LED_AllOff(void);
-void LED_On(uint8_t index);
-uint32_t Get_Delay(void);
+void SoftwarePwm_Update(void);
+void Update_Potentiometer(void);
+void Update_Animation(void);
 uint8_t Key_Scan(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-/* 关闭所有 LED */
-void LED_AllOff(void)
+/* 软件 PWM 输出，TIM5 每 100us 调用一次 */
+void SoftwarePwm_Update(void)
 {
-  for (int i = 0; i < 8; i++)
+  static uint8_t pwm = 0;
+  pwm = (pwm >= 99U) ? 0U : (uint8_t)(pwm + 1U);
+  for (uint8_t i = 0; i < 8; i++)
   {
-    HAL_GPIO_WritePin(LED_Ports[i], LED_Pins[i], GPIO_PIN_RESET);
+    if (pwm < led_brightness[i])
+      LED_Ports[i]->BSRR = LED_Pins[i];
+    else
+      LED_Ports[i]->BSRR = (uint32_t)LED_Pins[i] << 16U;
   }
 }
 
-/* 点亮指定编号的 LED (0-7), 其余熄灭 */
-void LED_On(uint8_t index)
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-  LED_AllOff();
-  HAL_GPIO_WritePin(LED_Ports[index], LED_Pins[index], GPIO_PIN_SET);
+  if (htim->Instance == TIM5)
+    SoftwarePwm_Update();
 }
 
-/* 读取电位器, 返回延时时间(毫秒), 范围 50-500ms */
-uint32_t Get_Delay(void)
+void Update_Potentiometer(void)
 {
-  HAL_ADC_Start(&hadc1);                          /* 启动 ADC 转换 */
-  HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY); /* 等待转换完成 */
-  uint32_t val = HAL_ADC_GetValue(&hadc1);        /* 读取结果 0-4095 */
-  /* 映射到 50ms - 500ms: 电位器值越大, 延时越长, 流水越慢 */
-  return 50 + (val * 450) / 4095;
+  if (HAL_ADC_Start(&hadc1) == HAL_OK &&
+      HAL_ADC_PollForConversion(&hadc1, 2) == HAL_OK)
+  {
+    uint32_t val = HAL_ADC_GetValue(&hadc1);
+    step_delay_ms = 50U + (val * 450U) / 4095U;
+  }
+  HAL_ADC_Stop(&hadc1);
 }
 
-/* 按键扫描(含软件消抖), 返回 1 表示本次按下有效 */
 uint8_t Key_Scan(void)
 {
-  uint8_t btn = HAL_GPIO_ReadPin(DIR_BTN_GPIO_Port, DIR_BTN_Pin);
-  if (btn == 0 && last_btn == 1)            /* 检测到下降沿 */
+  static uint32_t debounce_tick = 0;
+  uint32_t now = HAL_GetTick();
+  uint8_t btn = (uint8_t)HAL_GPIO_ReadPin(DIR_BTN_GPIO_Port, DIR_BTN_Pin);
+
+  if (btn != last_btn && (now - debounce_tick) >= 20U)
   {
-    HAL_Delay(20);                          /* 消抖延时 20ms */
-    if (HAL_GPIO_ReadPin(DIR_BTN_GPIO_Port, DIR_BTN_Pin) == 0)
-    {
-      last_btn = 0;
-      return 1;                             /* 确认按下, 返回有效 */
-    }
+    debounce_tick = now;
+    last_btn = btn;
+    return (btn == GPIO_PIN_RESET) ? 1U : 0U;
   }
-  else if (btn == 1)
+  return 0U;
+}
+
+void Update_Animation(void)
+{
+  uint32_t now = HAL_GetTick();
+  if ((now - last_anim_tick) < 5U)
+    return;
+  last_anim_tick = now;
+
+  for (uint8_t i = 0; i < 8; i++)
   {
-    last_btn = 1;                           /* 按键已释放, 恢复状态 */
+    if (i != current_led && led_brightness[i] > 0U)
+      led_brightness[i] = (led_brightness[i] > 8U) ?
+                          (uint8_t)(led_brightness[i] - 8U) : 0U;
   }
-  return 0;
+
+  if (led_brightness[current_led] < 100U)
+  {
+    led_brightness[current_led] =
+        (led_brightness[current_led] <= 90U) ?
+        (uint8_t)(led_brightness[current_led] + 10U) : 100U;
+    led_hold_start = now;
+  }
+  else if ((now - led_hold_start) >= step_delay_ms)
+  {
+    current_led = direction ? (uint8_t)((current_led + 7U) % 8U) :
+                               (uint8_t)((current_led + 1U) % 8U);
+    led_brightness[current_led] = 0U;
+    led_hold_start = now;
+  }
 }
 /* USER CODE END 0 */
 
@@ -147,6 +183,11 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_ADC1_Init();
+  MX_TIM5_Init();
+  if (HAL_TIM_Base_Start_IT(&htim5) != HAL_OK)
+  {
+    Error_Handler();
+  }
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
@@ -155,28 +196,17 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    /* 1. 扫描按键, 切换流水方向 */
     if (Key_Scan())
     {
       direction = !direction;
     }
 
-    /* 2. 点亮当前 LED */
-    LED_On(current_led);
-
-    /* 3. 根据电位器获取延时时间 */
-    uint32_t delay_ms = Get_Delay();
-    HAL_Delay(delay_ms);
-
-    /* 4. 更新 LED 编号 (到端点循环) */
-    if (direction == 0)
+    if ((HAL_GetTick() - last_adc_tick) >= 20U)
     {
-      current_led = (current_led + 1) % 8;   /* 正向: 0->1->...->7->0 */
+      last_adc_tick = HAL_GetTick();
+      Update_Potentiometer();
     }
-    else
-    {
-      current_led = (current_led + 7) % 8;   /* 反向: 0->7->6->...->1->0 */
-    }
+    Update_Animation();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

@@ -217,3 +217,12 @@ VP_SYS_VS_Systick.Mode=SysTick
 VP_SYS_VS_Systick.Signal=SYS_VS_Systick
 board=NUCLEO-F401RE
 boardIOC=true
+
+TIM5.IPParameters=Prescaler,Period,CounterMode,ClockDivision,AutoReloadPreload
+TIM5.Prescaler=83
+TIM5.Period=99
+TIM5.CounterMode=TIM_COUNTERMODE_UP
+TIM5.ClockDivision=TIM_CLOCKDIVISION_DIV1
+TIM5.AutoReloadPreload=TIM_AUTORELOAD_PRELOAD_DISABLE
+TIM5.master=1
+NVIC.TIM5_IRQn=true\:1\:0\:false\:false\:true\:true\:true\:true

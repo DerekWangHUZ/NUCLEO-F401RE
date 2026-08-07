@@ -1,0 +1,27 @@
+--cpu=Cortex-M4.fp.sp
+"flowingled\startup_stm32f401xe.o"
+"flowingled\main.o"
+"flowingled\gpio.o"
+"flowingled\adc.o"
+"flowingled\stm32f4xx_it.o"
+"flowingled\stm32f4xx_hal_msp.o"
+"flowingled\stm32f4xx_hal_adc.o"
+"flowingled\stm32f4xx_hal_adc_ex.o"
+"flowingled\stm32f4xx_hal_rcc.o"
+"flowingled\stm32f4xx_hal_rcc_ex.o"
+"flowingled\stm32f4xx_hal_flash.o"
+"flowingled\stm32f4xx_hal_flash_ex.o"
+"flowingled\stm32f4xx_hal_flash_ramfunc.o"
+"flowingled\stm32f4xx_hal_gpio.o"
+"flowingled\stm32f4xx_hal_dma_ex.o"
+"flowingled\stm32f4xx_hal_dma.o"
+"flowingled\stm32f4xx_hal_pwr.o"
+"flowingled\stm32f4xx_hal_pwr_ex.o"
+"flowingled\stm32f4xx_hal_cortex.o"
+"flowingled\stm32f4xx_hal.o"
+"flowingled\stm32f4xx_hal_exti.o"
+"flowingled\system_stm32f4xx.o"
+--strict --scatter "FlowingLED\FlowingLED.sct"
+--summary_stderr --info summarysizes --map --load_addr_map_info --xref --callgraph --symbols
+--info sizes --info totals --info unused --info veneers
+--list "FlowingLED.map" -o FlowingLED\FlowingLED.axf

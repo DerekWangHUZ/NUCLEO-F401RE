@@ -102,7 +102,8 @@ void Update_Potentiometer(void)
       HAL_ADC_PollForConversion(&hadc1, 2) == HAL_OK)
   {
     uint32_t val = HAL_ADC_GetValue(&hadc1);
-    step_delay_ms = 50U + (val * 450U) / 4095U;
+    /* 调快流水速度，同时保留明显的渐亮/渐灭过程：20-250ms */
+    step_delay_ms = 20U + (val * 230U) / 4095U;
   }
   HAL_ADC_Stop(&hadc1);
 }
@@ -132,15 +133,15 @@ void Update_Animation(void)
   for (uint8_t i = 0; i < 8; i++)
   {
     if (i != current_led && led_brightness[i] > 0U)
-      led_brightness[i] = (led_brightness[i] > 8U) ?
-                          (uint8_t)(led_brightness[i] - 8U) : 0U;
+      led_brightness[i] = (led_brightness[i] > 3U) ?
+                          (uint8_t)(led_brightness[i] - 3U) : 0U;
   }
 
   if (led_brightness[current_led] < 100U)
   {
     led_brightness[current_led] =
-        (led_brightness[current_led] <= 90U) ?
-        (uint8_t)(led_brightness[current_led] + 10U) : 100U;
+        (led_brightness[current_led] <= 96U) ?
+        (uint8_t)(led_brightness[current_led] + 3U) : 100U;
     led_hold_start = now;
   }
   else if ((now - led_hold_start) >= step_delay_ms)
